@@ -80,7 +80,9 @@ def do_update_ip(zone_id: str, hostname: str):
     try:
         ipv4 = get_ipv4_address()
         ipv6 = get_ipv6_address()
-    except (http.client.HTTPException, urllib.error.URLError) as e:
+    except (http.client.HTTPException,
+            urllib.error.URLError,
+            urllib.error.HTTPError) as e:
         raise UpdateError('Failed to get IP address') from e
 
     comment = '{}@{} via {}'.format(
