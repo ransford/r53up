@@ -72,14 +72,19 @@ class UpdateError(Exception):
     pass
 
 
-def do_update_ip(zone_id: str, hostname: str):
+def do_update_ip(zone_id: str, hostname: str, ipv4: bool, ipv6: bool):
     """Update an IP address.
 
     Raises a descriptive UpdateError upon any failure.
     """
+    changes = []
     try:
-        ipv4 = get_ipv4_address()
-        ipv6 = get_ipv6_address()
+        if ipv4:
+            v4addr = get_ipv4_address()
+            changes.append(get_change_record(hostname, v4addr, 'A'))
+        if ipv6:
+            v6addr = get_ipv6_address()
+            changes.append(get_change_record(hostname, v6addr, 'AAAA'))
     except (http.client.HTTPException,
             urllib.error.URLError,
             urllib.error.HTTPError) as e:
@@ -91,11 +96,11 @@ def do_update_ip(zone_id: str, hostname: str):
         __file__
     )
 
-    changes = [get_change_record(hostname, ipv4, 'A')]
-    if ipv6:
-        changes.append(get_change_record(hostname, ipv6, 'AAAA'))
-    logger.info('Submitting %d change(s)', len(changes))
+    if not changes:
+        logger.warn('No changes to make')
+        return
 
+    logger.info('Submitting %d change(s)', len(changes))
     client = boto3.client('route53')
     try:
         ret = client.change_resource_record_sets(
@@ -129,16 +134,29 @@ def init_logger(verbose: bool):
               help='Verbose output')
 @click.option('-V', '--version', is_flag=True, default=False,
               help='Show version information and exit.')
-def main(aws_zone_id, hostname, verbose, version):
+@click.option('-4', '--ipv4', is_flag=True, default=False,
+              help='IPv4 only')
+@click.option('-6', '--ipv6', is_flag=True, default=False,
+              help='IPv6 only')
+def main(aws_zone_id, hostname, verbose, version, ipv4, ipv6):
     """Main function."""
     if version:
         print(__version__)
         return 0
 
+    do_ipv4, do_ipv6 = True, True
+    if ipv4 and ipv6:
+        logger.error('Cannot specify both --ipv4 and --ipv6')
+        return 1
+    elif ipv4:
+        do_ipv4, do_ipv6 = True, False
+    elif ipv6:
+        do_ipv4, do_ipv6 = False, True
+
     init_logger(verbose)
 
     try:
-        do_update_ip(aws_zone_id, hostname)
+        do_update_ip(aws_zone_id, hostname, do_ipv4, do_ipv6)
     except UpdateError:
         logger.exception('Update failed')
         return 1
